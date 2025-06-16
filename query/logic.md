@@ -5,6 +5,7 @@
 **Бізнес-потреба:** Розуміння ефективності кожного студента у пошуку стажування.
 
 ```sql
+use internships_application_tracker;
 SELECT
     u.full_name AS fullname,
     u.university AS university,
@@ -35,6 +36,7 @@ ORDER BY cnt_applications DESC;
 **Бізнес-потреба:** Аналіз популярності компаній та їхньої активності у найманні стажерів.
 
 ```sql
+use internships_application_tracker;
 SELECT
     c.name AS Company,
     c.industry,
@@ -61,6 +63,7 @@ LIMIT 5;
 **Бізнес-потреба:** Створення рейтингу активності студентів в пошуку стажувань.
 
 ```sql
+use internships_application_tracker;
 SELECT
     u.full_name AS student_name,
     u.university,
@@ -86,3 +89,106 @@ ORDER BY COUNT(a.application_id) DESC;
 - **LAG()** - доступ до значення з попереднього рядка
 
 **Бізнес-ідея:** Мотивація студентів через створення здорової конкуренції.
+
+### 4. Ролі користувачів та політики доступу
+
+```sql
+use internships_application_tracker;
+create user if not exists 'admissions_officer'@'%' identified by '123456-officer';
+grant select, insert on internships_application_tracker.* to 'admissions_officer'@'%';
+
+create user if not exists 'database_manager'@'%' identified by '123456-db-manager';
+grant all privileges on internships_application_tracker.* to 'database_manager'@'%';
+
+create user if not exists 'intern'@'%' identified by '123456-intern';
+grant select on internships_application_tracker.applications to 'intern'@'%';
+```
+
+### 5. Автоматичний тригер для нотатки при зміні статусу
+
+```sql
+use internships_application_tracker;
+delimiter //
+create trigger tr_auto_note_on_apl after update on applications
+    for each row
+    begin
+        if new.status_id = 3 and old.status_id != 3 then
+            insert into notes (application_id, creation_date, note_text)
+            values (new.application_id, curdate(), concat('Auto note: Received offer! Date: ', curdate()));
+        end if;
+    end //
+delimiter ;
+```
+
+**Ідея:**
+- Якщо статус змінився на **Offered**, додаємо нотатку про це.
+
+
+### 6. Процедура `get_student_progress_report`
+
+```sql
+use internships_application_tracker;
+delimiter //
+create procedure get_student_progress_report(in student_id int)
+begin
+    select
+        u.full_name,
+        u.email,
+        u.university,
+        count(a.application_id) as total_applications,
+        max(a.application_date) as last_application_date
+    from users u
+             left join applications a on u.user_id = a.user_id
+    where u.user_id = student_id
+    group by u.user_id;
+
+    select
+        c.name as company,
+        p.job_title,
+        s.status,
+        a.application_date,
+        count(i.interview_id) as interview_count,
+        count(n.note_id) as notes_count,
+        IF(note_text is null,'No notes', note_text)
+    from applications a
+             inner join positions p on a.position_id = p.position_id
+             inner join companies c on p.company_id = c.company_id
+             inner join statuses s on a.status_id = s.status_id
+             left join interviews i on a.application_id = i.application_id
+             left join notes n on a.application_id = n.application_id
+    where a.user_id = student_id
+    group by a.application_id, a.application_date, note_text
+    order by a.application_date desc;
+end //
+delimiter ;
+```
+
+**Ідея:**
+- Виводить всю потрібну інтерну інформацію.
+
+### 7. View: `company_hiring_efficiency`
+
+```sql
+use internships_application_tracker;
+create view company_hiring_efficiency as
+select
+    c.name as company_name,
+    c.industry,
+    count(a.application_id) as total_applications,
+    sum(case when s.status = 'Offered' then 1 else 0 end) as offers_made,
+    ROUND((sum(case when s.status = 'Offered' then 1 else 0 end) * 100.0 / count(a.application_id)), 2) as offer_rate_percent,
+    avg(i.interview_round) as avg_interview_rounds,
+    count(DISTINCT cont.contact_id) as hr_contacts_available
+from companies c
+         left join positions p on c.company_id = p.company_id
+         left join applications a on p.position_id = a.position_id
+         left join statuses s on a.status_id = s.status_id
+         left join interviews i on a.application_id = i.application_id
+         left join contacts cont on c.company_id = cont.company_id
+group by c.company_id, c.name, c.industry
+having count(a.application_id) >= 3
+order by offer_rate_percent desc;
+```
+
+**Бізнес-потреба**:
+- Оцінити ефективність компаній у процесі найму, зрозуміти, наскільки активно вони приймають участь у програмі стажувань та як добре обробляють подані заявки.

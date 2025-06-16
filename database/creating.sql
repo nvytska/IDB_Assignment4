@@ -68,3 +68,34 @@ feedback text,
 constraint chk_interview check (interview_round > 0 and interview_round <= 5),
 foreign key (application_id) references applications(application_id)
 on delete cascade);
+
+
+-- creating users
+
+create user if not exists 'admissions_officer'@'%' identified by '123456-officer';
+grant select, insert on internships_application_tracker.* to 'admissions_officer'@'%';
+
+
+create user if not exists 'database_manager'@'%' identified by '123456-db-manager';
+grant all privileges on internships_application_tracker.* to 'database_manager'@'%';
+
+
+create user if not exists 'intern'@'%' identified by '123456-intern';
+grant select on
+    internships_application_tracker.applications to 'intern'@'%';
+
+
+-- creating tigger
+
+delimiter //
+create trigger tr_auto_note_on_apl after update on applications
+    for each row
+    begin
+        if new.status_id = 3 and old.status_id != 3 then
+            insert into notes (application_id, creation_date, note_text)
+                values (new.application_id,
+                        curdate(),
+                        concat('Auto note: Received offer! Date: ', curdate()));
+        end if;
+    end //
+delimiter ;
