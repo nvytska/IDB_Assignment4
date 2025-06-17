@@ -10,3 +10,5 @@ The **Internships Application Tracker** is a structured database system designed
 - **csv_files/** - Includes CSV files for data import.
 - **database/** - Houses SQL scripts for schema creation and modification, users creation, trigger.
 - **query/** - Contains queries, views, stored procedures, index creating.
+
+# By: Vytska Nataliia, Kozlov Savelii, Kovalenko David
